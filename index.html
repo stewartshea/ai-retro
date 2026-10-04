@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-retro — see what your prompts really cost</title>
+<meta name="description" content="A retro for your LLM token usage. See what you burned, reflect on why, prompt lighter next week.">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1a1d23;
+  --surface: #242830;
+  --border: #333845;
+  --accent: #e8a84c;
+  --accent-dim: #b07d2e;
+  --green: #7bc47f;
+  --red: #e06050;
+  --text: #e8e6e1;
+  --muted: #8b8fa3;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.wrap {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+/* Header */
+header {
+  margin-bottom: 3rem;
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+
+.logo span { color: var(--muted); }
+
+.tagline {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* Calculator */
+.calc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.calc h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.calc-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.calc-group {
+  flex: 1;
+  min-width: 140px;
+}
+
+.calc-group label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calc-group select,
+.calc-group input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.calc-group select:focus,
+.calc-group input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.55rem 1.2rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn:hover { opacity: 0.85; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Result */
+.result {
+  margin-top: 1.25rem;
+  display: none;
+}
+
+.result.show { display: block; }
+
+.result-energy {
+  font-family: var(--mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.result-unit {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.comparables {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.comp-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  animation: fadeIn 0.4s ease both;
+}
+
+.comp-item:nth-child(2) { animation-delay: 0.1s; }
+.comp-item:nth-child(3) { animation-delay: 0.2s; }
+.comp-item:nth-child(4) { animation-delay: 0.3s; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.comp-icon {
+  font-size: 1.1rem;
+  width: 1.5rem;
+  text-align: center;
+}
+
+.comp-text { color: var(--text); }
+.comp-text em { font-style: normal; color: var(--green); font-weight: 600; }
+
+.method-note {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.method-note a { color: var(--accent); text-decoration: none; }
+.method-note a:hover { text-decoration: underline; }
+
+/* Sections */
+.section {
+  margin-bottom: 3rem;
+}
+
+.section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.layer {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.layer:last-child { border-bottom: none; }
+
+.layer-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.layer-num {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.layer-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.layer-desc {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.status-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.badge-live { background: rgba(123,196,127,0.15); color: var(--green); }
+.badge-soon { background: rgba(232,168,76,0.15); color: var(--accent); }
+.badge-later { background: rgba(139,143,163,0.15); color: var(--muted); }
+
+/* Methodology */
+.methodology p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+.methodology strong { color: var(--text); font-weight: 500; }
+
+.model-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin-top: 1rem;
+}
+
+.model-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* Roadmap */
+.roadmap-list {
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.roadmap-list li {
+  padding: 0.3rem 0;
+  position: relative;
+  padding-left: 1.2rem;
+}
+
+.roadmap-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.7rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.roadmap-list li.done::before { background: var(--green); }
+.roadmap-list li.next::before { background: var(--accent); }
+
+/* Footer */
+footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+footer a:hover { text-decoration: underline; }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .wrap { padding: 2rem 1rem 3rem; }
+  .calc-row { flex-direction: column; }
+  .result-energy { font-size: 1.6rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comp-item { animation: none; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">ai<span>-</span>retro</div>
+  <p class="tagline">A retro for your LLM token usage. See what you burned, reflect on why, prompt lighter next week.</p>
+</header>
+
+<!-- Calculator -->
+<section class="calc">
+  <h2>What did that session cost?</h2>
+  <div class="calc-row">
+    <div class="calc-group">
+      <label for="model">Model</label>
+      <select id="model">
+        <option value="gpt4o">GPT-4o</option>
+        <option value="claude-sonnet">Claude Sonnet</option>
+        <option value="claude-haiku">Claude Haiku</option>
+        <option value="reasoning">Reasoning model (o3)</option>
+        <option value="small">Small/local model (8B)</option>
+      </select>
+    </div>
+    <div class="calc-group">
+      <label for="tokens">Total tokens (in + out)</label>
+      <input type="number" id="tokens" value="5000" min="1" step="100">
+    </div>
+  </div>
+  <button class="btn" onclick="calculate()">Calculate impact</button>
+
+  <div class="result" id="result">
+    <div class="result-energy" id="res-energy"></div>
+    <div class="result-unit" id="res-unit"></div>
+    <div class="comparables" id="comparables"></div>
+    <p class="method-note">Estimates from the <strong>"How Hungry is AI?"</strong> inference benchmark (arXiv 2505.09598), facility energy including datacenter overhead. Grid intensity assumed at 400 gCO₂/kWh (global average). Shown as a range because the source data has real spread. <a href="#methodology">See methodology ↓</a></p>
+  </div>
+</section>
+
+<!-- What's coming -->
+<section class="section">
+  <h2>What's coming</h2>
+
+  <div class="layer">
+    <div class="layer-header">
+      <span class="layer-num">01</span>
+      <span class="layer-title">The Translator</span>
+      <span class="status-badge badge-live">live above</span>
+    </div>
+    <p class="layer-desc">Every session converted into concrete equivalents — bus kilometres, trees, planes, dinosaurs. Model-aware, with transparent uncertainty ranges. The "one prompt = bus driving all night" moment that makes you reconsider.</p>
+  </div>
+
+  <div class="layer">
+    <div class="layer-header">
+      <span class="layer-num">02</span>
+      <span class="layer-title">The Mirror</span>
+      <span class="status-badge badge-soon">next</span>
+    </div>
+    <p class="layer-desc">Real-time nudge while prompting, plus a weekly retrospective: your trends, what changed, which sessions were heavy and why. Import from OpenRouter's analytics API or our unique-key plugin. The reflection loop where behavior actually shifts.</p>
+  </div>
+
+  <div class="layer">
+    <div class="layer-header">
+      <span class="layer-num">03</span>
+      <span class="layer-title">The Commons</span>
+      <span class="status-badge badge-later">later</span>
+    </div>
+    <p class="layer-desc">Optional community comparison. Contribute your anonymized totals to a shared counter, or compare your week against the cohort. Not a leaderboard — a mirror held up collectively.</p>
+  </div>
+</section>
+
+<!-- Methodology -->
+<section class="section methodology" id="methodology">
+  <h2>Methodology</h2>
+  <p>Every figure below comes from a single primary source: the <strong>"How Hungry is AI?"</strong> inference benchmark (arXiv 2505.09598, v6), which models 30 frontier models as actually deployed in commercial datacenters — inferring hardware configuration from public API throughput and latency, then multiplying runtime by GPU + non-GPU power. We use its <strong>1,000 input / 1,000 output</strong> column, which is 2,000 tokens of work, and divide by two to get a per-1K-token rate.</p>
+  <p>Those published numbers are <strong>facility energy, PUE already included</strong> — the paper's own formula multiplies by PUE, and it reports 0.42 Wh for a short GPT-4o prompt against 0.37 Wh "without datacenter overhead." So we apply no PUE factor of our own; doing so would inflate every result by ~30%.</p>
+  <p>The spread is real and we show it rather than hide it. Reasoning models carry by far the widest error bars (±41% for o3) because hidden chain-of-thought length is unpredictable. Grid carbon intensity defaults to <strong>400 gCO₂/kWh</strong> (IEA global average) and is the largest remaining source of uncertainty — your provider's actual region and time-of-day load can differ by 5×.</p>
+
+  <table class="model-table">
+    <thead>
+      <tr><th>Model class</th><th>Wh / 1K tokens</th><th>Source</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>GPT-4o (Mar '25)</td><td>0.61 ± 0.12</td><td>arXiv 2505.09598</td></tr>
+      <tr><td>Claude 3.7 Sonnet</td><td>1.50 ± 0.10</td><td>arXiv 2505.09598</td></tr>
+      <tr><td>Claude 3.5 Haiku</td><td>2.23 ± 0.14</td><td>arXiv 2505.09598</td></tr>
+      <tr><td>Reasoning (o3)</td><td>2.58 ± 1.05</td><td>arXiv 2505.09598</td></tr>
+      <tr><td>Small / local (8B)</td><td>0.086 ± 0.008</td><td>arXiv 2505.09598</td></tr>
+    </tbody>
+  </table>
+
+  <p class="method-note" style="border: none; padding-top: 0.25rem;">Two honest caveats. First, these rates assume a <strong>50/50 input-output mix</strong>; real sessions skew toward input (prefill is cheaper than decode), so a chat-heavy week will read lower than this table suggests. Second, deployment matters more than model size — the paper measures DeepSeek-R1 at <strong>12.3 ± 4.7 Wh/1K</strong> on DeepSeek's own servers versus <strong>2.17 ± 0.58</strong> for the same weights served on Azure, a 5× swing from hardware alone. Haiku outscoring Sonnet above is the same effect, not a typo.</p>
+</section>
+
+<!-- Roadmap -->
+<section class="section">
+  <h2>Roadmap</h2>
+  <ul class="roadmap-list">
+    <li class="done">Static landing page with impact calculator (this page)</li>
+    <li class="next">OpenRouter import script — pull your token history, see your retro</li>
+    <li>Unique API key + lightweight plugin for continuous anonymous logging</li>
+    <li>Weekly reflection card — shareable "Wrapped"-style summary</li>
+    <li>Community commons — opt-in shared counter</li>
+    <li>Provider expansion (Anthropic, Google, local via Ollama)</li>
+  </ul>
+</section>
+
+<footer>
+  <p>A home project. No tracking, no account, no guilt — just a clearer picture.<br>
+  Source: <a href="https://github.com/stewartshea/ai-retro" target="_blank" rel="noopener">github.com/stewartshea/ai-retro</a></p>
+</footer>
+
+</div>
+
+<script>
+const MODELS = {
+  'gpt4o':         { whPer1k: 0.608, stdPer1k: 0.121, label: 'GPT-4o' },
+  'claude-sonnet': { whPer1k: 1.495, stdPer1k: 0.101, label: 'Claude Sonnet' },
+  'claude-haiku':  { whPer1k: 2.232, stdPer1k: 0.142, label: 'Claude Haiku' },
+  'reasoning':     { whPer1k: 2.577, stdPer1k: 1.054, label: 'Reasoning model' },
+  'small':         { whPer1k: 0.086, stdPer1k: 0.008, label: 'Small/local model' }
+};
+
+const GRID_INTENSITY = 400;
+
+const COMPARABLES = [
+  { g: 0.5,   icon: '🚶', count: g => g / 0.5,
+    one: 'brisk walk around the block', many: 'brisk walks around the block' },
+  { g: 2,     icon: '💡', count: g => g / 2,
+    one: 'LED bulb running for a day', many: 'LED bulbs running for a day' },
+  { g: 10,    icon: '📱', count: g => g / 10,
+    one: 'phone charge', many: 'phone charges' },
+  { g: 50,    icon: '🚌', count: g => g / 50,
+    fmt: n => n >= 0.1
+      ? `${n.toFixed(1)} km of bus driving around town`
+      : `${percent(n)}% of one km of bus driving` },
+  { g: 200,   icon: '✈️', count: g => g / 200,
+    one: 'short-haul flight seat', many: 'short-haul flight seats' },
+  { g: 500,   icon: '🌳', count: g => g / 500,
+    one: 'tree absorbing CO₂ for a day', many: 'trees absorbing CO₂ for a day' },
+  { g: 2000,  icon: '🦕', count: g => g / 2000,
+    one: 'dinosaur resurrection', many: 'dinosaur resurrections' },
+  { g: 10000, icon: '🏭', count: g => g / 10000,
+    one: 'small factory emitting for a day', many: 'small factories emitting for a day' }
+];
+
+function percent(n) {
+  const pct = n * 100;
+  return pct >= 1 ? Math.round(pct * 10) / 10 : Math.round(pct * 100) / 100;
+}
+
+function quantity(n, one, many) {
+  if (n >= 1) {
+    const tenths = Math.round(n * 10) / 10;
+    const isWhole = Math.abs(tenths - Math.round(tenths)) < 0.05;
+    const v = isWhole ? Math.round(tenths) : tenths;
+    return `${v} ${v < 1.05 ? one : many}`;
+  }
+  if (n >= 0.0001) return `${percent(n)}% of one ${one}`;
+  return null;
+}
+
+function energyParts(wh) {
+  if (wh >= 100) return { value: (wh / 1000).toFixed(2), unit: 'kWh' };
+  if (wh >= 0.1) return { value: wh.toFixed(2), unit: 'watt-hours' };
+  return { value: (wh * 1000).toFixed(1), unit: 'milli-watt-hours' };
+}
+
+function co2Parts(grams) {
+  if (grams >= 1000) return { value: (grams / 1000).toFixed(2), unit: 'kg CO₂', scale: 1e-3 };
+  if (grams >= 1) return { value: grams.toFixed(1), unit: 'g CO₂', scale: 1 };
+  const mg = grams * 1000;
+  if (mg >= 1) return { value: mg.toFixed(1), unit: 'mg CO₂', scale: 1e3 };
+  const ug = grams * 1e6;
+  if (ug >= 1) return { value: ug.toFixed(2), unit: 'µg CO₂', scale: 1e6 };
+  return { value: (grams * 1e9).toFixed(2), unit: 'ng CO₂', scale: 1e9 };
+}
+
+function co2Range(center, lo, hi) {
+  const { value, unit, scale } = co2Parts(center);
+  const dp = unit === 'kg CO₂' || unit === 'µg CO₂' ? 2 : 1;
+  const a = lo * scale;
+  const b = hi * scale;
+  const head = `≈ ${value} ${unit}`;
+  if (a.toFixed(dp) === value && b.toFixed(dp) === value) return head;
+  return `${head} (${a.toFixed(dp)}–${b.toFixed(dp)} ${unit.replace(' CO₂', '')})`;
+}
+
+function calculate() {
+  const modelKey = document.getElementById('model').value;
+  const raw = document.getElementById('tokens').value.trim();
+  const parsed = Number(raw);
+
+  // Accept plain and scientific notation (1e6); reject hex, garbage, and Infinity.
+  const valid = /^\d+(\.\d+)?([eE][+-]?\d+)?$/.test(raw) && Number.isFinite(parsed) && parsed >= 1;
+  const tokens = valid ? Math.round(parsed) : 0;
+
+  const resultEl = document.getElementById('result');
+  const compEl = document.getElementById('comparables');
+
+  if (!valid) {
+    resultEl.classList.remove('show');
+    document.getElementById('res-energy').textContent = '';
+    document.getElementById('res-unit').textContent = '';
+    compEl.replaceChildren();
+    return;
+  }
+
+  const model = MODELS[modelKey];
+  const thousands = tokens / 1000;
+  const wh = thousands * model.whPer1k;
+  const whStd = thousands * model.stdPer1k;
+
+  const co2 = (wh / 1000) * GRID_INTENSITY;
+  const co2Lo = (Math.max(0, wh - whStd) / 1000) * GRID_INTENSITY;
+  const co2Hi = ((wh + whStd) / 1000) * GRID_INTENSITY;
+
+  const energy = energyParts(wh);
+  document.getElementById('res-energy').textContent = energy.value;
+  document.getElementById('res-unit').textContent =
+    `${energy.unit} · ${co2Range(co2, co2Lo, co2Hi)}`;
+
+  const sorted = [...COMPARABLES].sort((a, b) => a.g - b.g);
+  let bestIdx = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].g <= co2) bestIdx = i;
+    else break;
+  }
+
+  const picks = new Set([bestIdx]);
+  if (bestIdx > 0) picks.add(bestIdx - 1);
+  if (bestIdx < sorted.length - 1) picks.add(bestIdx + 1);
+
+  compEl.replaceChildren();
+
+  [...picks].sort((a, b) => a - b).forEach(i => {
+    const c = sorted[i];
+    const n = c.count(co2);
+    const text = c.fmt ? c.fmt(n) : quantity(n, c.one, c.many);
+    if (text === null) return;
+    const div = document.createElement('div');
+    div.className = 'comp-item';
+    const icon = document.createElement('span');
+    icon.className = 'comp-icon';
+    icon.textContent = c.icon;
+    const body = document.createElement('span');
+    body.className = 'comp-text';
+    body.append('≈ ');
+    const em = document.createElement('em');
+    em.textContent = text;
+    body.appendChild(em);
+    div.appendChild(icon);
+    div.appendChild(body);
+    compEl.appendChild(div);
+  });
+
+  if (!compEl.children.length) {
+    const div = document.createElement('div');
+    div.className = 'comp-item';
+    div.textContent = 'too small to put next to anything real — which is the good outcome';
+    compEl.appendChild(div);
+  }
+
+  document.getElementById('result').classList.add('show');
+}
+
+document.getElementById('tokens').addEventListener('keydown', e => {
+  if (e.key === 'Enter') calculate();
+});
+</script>
+</body>
+</html>
